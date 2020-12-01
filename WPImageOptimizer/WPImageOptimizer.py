@@ -33,19 +33,26 @@ class WPImageOptimizer:
 	DATA = [] # ALL DATA
 	TMPSET = [] # DATASET FOR MANIPULATING
 	SUBSET = [] # DATA SUBSET FOR MANIPULATING
-	PNGs = []
+	SIZEOVER = []
+	SIZEUNDER = []
+	GIFS = []
+	PNGS = []
+	JPEGS = []
+	SVGS = []
 
 	# CONSTRUCTOR
-	def __init__( self, src='uploads', daterange=range(2000, 2020) ):
+	def __init__( self, src='uploads', daterange=range(2000, 2020), sizelimit=200, displayanalytics=True):
 		# file paths
 		self.SRC = self.ROOT+self.SEP+src
 		self.SRC_WARN = '%s/%s' % (self.ROOT, 'warning')
 		self.SRC_ERROR = '%s/%s' % (self.ROOT, 'errors')
+		self.SRC_FIXED = '%s/%s' % (self.ROOT, 'fixed')
 		self.datalog = '%s/%s' % (self.DATAPATH, self.LOGFILE)
 		self.warninglog = '%s/%s' % (self.DATAPATH , 'log_warnings.txt')
 		self.errorlog = '%s/%s' % (self.DATAPATH , 'log_errors.txt')
 		# data restraints
 		self.daterange = daterange
+		self.sizelimit = sizelimit
 		self.img_size_limit = False
 		self.img_with_ext = False
 		self.img_edited_on = False
@@ -62,8 +69,34 @@ class WPImageOptimizer:
 				if self.writeJsonDataToFile(self.DATAFILE, self.DATA):
 					self.log('data collection saved...')
 
-		# INITIAL ACTIONS
-		# DO SOMETHING WITH THE DATA
+		# INITIAL ACTIONS — DO SOMETHING WITH THE DATA
+		# IMG ACTIONS BY FILE EXTENSION
+		# save all PNG images to data PNGS
+		self.getImagesWithExt(images=self.DATA, ext='png', saveto=self.PNGS)
+		# save all JPEG images to data JPEGS
+		self.getImagesWithExt(images=self.DATA, ext='jpeg', saveto=self.JPEGS)
+		# save all SVG images to data SVGS
+		self.getImagesWithExt(images=self.DATA, ext='svg', saveto=self.SVGS)
+		# save all GIF images to data GIFS
+		self.getImagesWithExt(images=self.DATA, ext='gif', saveto=self.GIFS)
+		# log initial output
+		if displayanalytics:
+			print( '# TOTAL IMAGES:', len(self.DATA) )
+			print( '# PNGS:\t\t', len(self.PNGS) )
+			print( '# JPEGS:\t', len(self.JPEGS) )
+			print( '# GIFS:\t\t', len(self.GIFS) )
+			print( '# SVGS:\t\t', len(self.SVGS), '\n' )
+
+		# IMG ACTIONS BY FILE SIZE
+		# save all images exceeding size limit to the data OVER or UNDER lists
+		self.getImagesOfFileSize(images=self.DATA, over=True, limit=self.sizelimit, saveto=self.SIZEOVER)
+		self.getImagesOfFileSize(images=self.DATA, over=False, limit=self.sizelimit, saveto=self.SIZEUNDER)
+		# log initial output
+		if displayanalytics:
+			print( '# SIZE ERRORS:' )
+			print( '# OK ::\t\tkb<%d:' % self.sizelimit, len(self.SIZEUNDER) )
+			print( '# FIX::\t\tkb > %d:' % self.sizelimit, len(self.SIZEOVER), '\n' )
+
 		# optimize images
 		# move problem images to 'warning'
 		# solve problem images
@@ -88,6 +121,8 @@ class WPImageOptimizer:
 			self.makeDir(self.SRC_WARN)
 			# ERROR flag directory
 			self.makeDir(self.SRC_ERROR)
+			# FIXED imgs directory
+			self.makeDir(self.SRC_FIXED)
 			# LOG FILES
 			# primary log file
 			Path(self.datalog).touch(exist_ok=True)
@@ -142,10 +177,10 @@ class WPImageOptimizer:
 			with open(datafile_path) as json_data:
 				data = json.load(json_data)
 				if not data:
-					self.log('gathering data...')
+					#self.log('gathering data...')
 					return [] # return empty set to populate
 				else:
-					self.log('%s data ready...' % datafile_path)
+					#self.log('%s data ready...\n' % datafile_path)
 					return data # return dataset
 		except:
 			return []
@@ -202,20 +237,27 @@ class WPImageOptimizer:
 		return True
 
 	# NARROW IMG LIST IN DATASET BY FILESIZE
-	def getImagesOverFileSize(self, images, limit, saveto=False):
+	def getImagesOfFileSize(self, images, over=True, limit=200, saveto=False):
+		# find images exceeding limit
 		SUBCOLLECTION = []
 		for data in images:
 			size = data['size']/1000
-			if size > limit:
-				saveto.append( data )
+			if isinstance(saveto, list):
+				if over:
+					if size > limit:
+						saveto.append( data )
+				else:
+					if size <= limit:
+						saveto.append( data )
 		return SUBCOLLECTION
 
 	# NARROW IMG LIST IN DATASET BY EXTENSION
 	def getImagesWithExt(self, images, ext, saveto=False):
 		SUBCOLLECTION = []
 		for data in images:
-			if data['ext'] == ext:
-				saveto.append( data )
+			if isinstance(saveto, list):
+				if data['ext'] == ext:
+					saveto.append( data )
 		return SUBCOLLECTION
 
 	###########################################################################
@@ -224,23 +266,23 @@ class WPImageOptimizer:
 	# LOG ALL PNG IMAGES TO A JSON FILE
 	def logAllPngsToFile(self, filename='pngs.json', logdata=False):
 		# check class data collection
-		self.PNGs = self.getJsonDataFromFile('pngs.json')
+		self.PNGS = self.getJsonDataFromFile('pngs.json')
 		# no PNGs in file
-		if not self.PNGs:
+		if not self.PNGS:
 			# loop all data items
 			for item in self.DATA:
 				# if is image and .PNG extension
 				if item['type'] == 'image' and item['ext'] == 'png':
-					self.PNGs.append(item)
+					self.PNGS.append(item)
 			# log to file
-			self.writeJsonDataToFile(filename, self.PNGs)
+			self.writeJsonDataToFile(filename, self.PNGS)
 		# with PNGs data collected from file
-		if len(self.PNGs):
+		if len(self.PNGS):
 			# flag the number of images
 			if logdata:
-				self.fileLog('flagged %d .png images' % len(self.PNGs))
+				self.fileLog('flagged %d .png images' % len(self.PNGS))
 			else:
-				self.log('flagged %d .png images' % len(self.PNGs))
+				self.log('flagged %d .png images' % len(self.PNGS))
 		# make method chainable
 		return self
 	
@@ -274,40 +316,23 @@ class WPImageOptimizer:
 		return self
 
 	# MOVE IMAGES IN LIST FROM X TO Y
-	def moveImages(self, images=[], fromPath='', toPath='', copyFile=False):
-		# if no data set provided
-		if not images:
-			# auto log all data
-			images = self.DATA
+	def moveImages(self, images=[], frompath='', topath='', copyfile=False):
 		# loop through input list
 		for data in images:
-
 			# paths
-			#path_src = self.SEP+'/'.join(data['src'].split('/')[3:5])+self.SEP
-			path_src = self.SEP
-			origin_path = fromPath+path_src
-			dest_path = toPath+path_src
-
-			print( path_src )
-			print( origin_path )
-			print( dest_path )
-			print(os.path.exists(origin_path) and os.path.exists(dest_path))
-
+			path_src = self.SEP+'/'.join(data['src'].split('/')[3:5])+self.SEP  # FOR WORDPRESS UPLOADS
+			origin_path = frompath+path_src
+			dest_path = topath+path_src
 			# files
 			old_file = origin_path+data['file']
 			new_file = dest_path+data['file']
-
-			print( old_file )
-			print( new_file )
-			print('---')
-
-			# ensure destination folder is created
-			#self.makeDir( dest_path[:-1] )
-
+			# make destination folder if doesn't exist yet
+			if not os.path.exists(dest_path):
+				self.makeDir( dest_path[:-1] )
 			# if both the src and destination folders exist
 			if os.path.exists(origin_path) and os.path.exists(dest_path):
 				# copy or move
-				if copyFile:
+				if copyfile:
 					# duplicate image collection
 					copycmd = 'cp %s %s' % ( old_file, new_file )
 					os.system( copycmd )
@@ -316,7 +341,7 @@ class WPImageOptimizer:
 					os.rename(old_file, new_file)
 			else:
 				self.log('ERROR: could not move images')
-			
+
 		# make method chainable
 		return self
 
@@ -351,8 +376,8 @@ class WPImageOptimizer:
 			'''
 
 			return
-
 	def runPhotoshopAction(self, actionName=''):
+		# do something in photoshop
 		print(doc)
 
 	# OPTIMIZE ALL IMAGES IN LIST
@@ -371,35 +396,6 @@ class WPImageOptimizer:
 				self.log(data['src'])
 		# make method chainable
 		return self
-
-	# CHECK FOLDER PATHS EXIST OR MAKE NEW FOLDER
-	def checkFolderPathsStatus(self, fileLocation):	
-		folder_lvls = fileLocation.split('/')
-		base_lvl = '/'.join(folder_lvls[:2])
-		sub_lvls = folder_lvls[2:]
-		if os.path.exists(fileLocation) == False:
-			lvl_count = 0
-			lvl_prev = ''
-			# loop each sub directory
-			for this_dir in sub_lvls:
-				# top level
-				if not lvl_count > 0:
-					lvl_prev = this_dir
-					new_dir = base_lvl+self.SEP+this_dir
-				# sub level
-				else:
-					new_dir = base_lvl+self.SEP+lvl_prev+self.SEP+this_dir
-				# make new directory
-				try:
-					os.mkdir(new_dir)
-				except OSError:
-					self.fileLog("ERROR making new directory: %s" % new_dir)
-				else:
-					self.fileLog("new directory created: %s" % new_dir)
-				# go to next sub directory
-				lvl_count += 1
-		# once complete return true
-		return True
 
 	# RENAME IMAGES IN LIST
 	"""
@@ -430,9 +426,4 @@ class WPImageOptimizer:
 				self.log('rename... adding...')
 	"""
 
-
-###########################################################################
-
-
-
-
+###############################################################################
