@@ -3,8 +3,15 @@ lib/__pycache__*
 lib/__pycache__*
 
 # ignore htaccess and mac thumbs
+.DS_Store
 *.DS_Store
 
 # ignore upload assets
 src/*
 data/*
+
+
+git remote set-url git@github.com:joeygrable94/WordpressImageOptimizer.git
+git remote set-url --add origin git@github.com:joeygrable94/WordpressImageOptimizer.git
+
+git remote set-url --delete origin https://github.com/joeygrable94/WordpressImageOptimizer.git
