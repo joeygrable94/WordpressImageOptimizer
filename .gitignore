@@ -9,9 +9,3 @@ lib/__pycache__*
 # ignore upload assets
 src/*
 data/*
-
-
-git remote set-url git@github.com:joeygrable94/WordpressImageOptimizer.git
-git remote set-url --add origin git@github.com:joeygrable94/WordpressImageOptimizer.git
-
-git remote set-url --delete origin https://github.com/joeygrable94/WordpressImageOptimizer.git
