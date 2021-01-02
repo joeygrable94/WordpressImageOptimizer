@@ -7,5 +7,5 @@ lib/__pycache__*
 *.DS_Store
 
 # ignore upload assets
-src/*
+#src/*
 data/*
