@@ -1,0 +1,10 @@
+# ignore python dirs
+lib/__pycache__*
+lib/__pycache__*
+
+# ignore htaccess and mac thumbs
+*.DS_Store
+
+# ignore upload assets
+src/*
+data/*

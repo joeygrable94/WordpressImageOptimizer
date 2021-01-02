@@ -1,5 +1,7 @@
+###############################################################################
 # imports
 import logging, sys, os, shutil, math, re, json
+import optimize_images
 from datetime import datetime
 from pathlib2 import Path
 from datetime import date
@@ -7,30 +9,22 @@ from datetime import date
 #import photoshop.api as PS
 from appscript import *
 
+
 ###########################################################################
-# DATA COLLECTION
-# data['file']
-# data['path']
-# data['src']
-# data['ext']
-# data['size']
-# data['timestamp']
-# data['edited']
-
-
 # IMAGE OPTIMIZER UTILITY CLASS
-class WPImageOptimizer:
-
+class ImageOptimizer:
 	# GLOBALS
-	ROOT = './src'
-	DATAPATH = './data'
+	ROOT = '/'.join(os.path.dirname(os.path.realpath(__file__)).split('/')[:-1])
+	DATAPATH = ''
 	SEP = '/'
 	SRC = ''
-	IMG_EXTS = ['png','jpg','gif','jpeg']
+	IMG_EXTS = ['png','jpg','jpeg','gif','ico']
 	LOGFILE = 'log.txt'
 	DATAFILE = 'data.json'
 
 	DATA = [] # ALL DATA
+	ASSETS = [] # ASSETS
+	FILETYPES = [] # ALL FILES TYPES IN SRC
 	TMPSET = [] # DATASET FOR MANIPULATING
 	SUBSET = [] # DATA SUBSET FOR MANIPULATING
 	SIZEOVER = []
@@ -41,12 +35,14 @@ class WPImageOptimizer:
 	SVGS = []
 
 	# CONSTRUCTOR
-	def __init__( self, src='uploads', daterange=range(2000, 2020), sizelimit=200, displayanalytics=True):
+	def __init__( self, src='uploads', daterange=range(2000, 2020), sizelimit=200, displayanalytics=True ):
 		# file paths
-		self.SRC = self.ROOT+self.SEP+src
-		self.SRC_WARN = '%s/%s' % (self.ROOT, 'warning')
-		self.SRC_ERROR = '%s/%s' % (self.ROOT, 'errors')
-		self.SRC_FIXED = '%s/%s' % (self.ROOT, 'fixed')
+		self.DATAPATH = '%s/%s' % (self.ROOT, 'data')
+		self.SRC = '%s/%s' % (self.ROOT, 'src')
+		self.SRC_ASSETS = '%s/%s' % (self.ROOT, src)
+		self.SRC_WARN = '%s/%s' % (self.SRC, 'warning')
+		self.SRC_ERROR = '%s/%s' % (self.SRC, 'errors')
+		self.SRC_FIXED = '%s/%s' % (self.SRC, 'fixed')
 		self.datalog = '%s/%s' % (self.DATAPATH, self.LOGFILE)
 		self.warninglog = '%s/%s' % (self.DATAPATH , 'log_warnings.txt')
 		self.errorlog = '%s/%s' % (self.DATAPATH , 'log_errors.txt')
@@ -57,6 +53,7 @@ class WPImageOptimizer:
 		self.img_with_ext = False
 		self.img_edited_on = False
 
+		'''
 		# BUILD OPERATIONS
 		# check/create directories
 		self.initializeFilesAndFolders()
@@ -64,17 +61,22 @@ class WPImageOptimizer:
 		self.DATA = self.getJsonDataFromFile(self.DATAFILE)
 		if not self.DATA:
 			# build media collection data
-			if self.saveImagesToCollection(self.SRC, self.DATA):
+			if self.saveImagesToCollection(self.SRC_ASSETS, self.DATA):
 				# write data to json file
 				if self.writeJsonDataToFile(self.DATAFILE, self.DATA):
 					self.log('data collection saved...')
 
 		# INITIAL ACTIONS — DO SOMETHING WITH THE DATA
+		self.ASSETS = self.sortAssetsByFiletype(assets=self.DATA)
+		#print(self.ASSETS['jpg'])
+		'''
+
+		'''
 		# IMG ACTIONS BY FILE EXTENSION
 		# save all PNG images to data PNGS
 		self.getImagesWithExt(images=self.DATA, ext='png', saveto=self.PNGS)
 		# save all JPEG images to data JPEGS
-		self.getImagesWithExt(images=self.DATA, ext='jpeg', saveto=self.JPEGS)
+		self.getImagesWithExt(images=self.DATA, ext=['jpeg','jpg'], saveto=self.JPEGS)
 		# save all SVG images to data SVGS
 		self.getImagesWithExt(images=self.DATA, ext='svg', saveto=self.SVGS)
 		# save all GIF images to data GIFS
@@ -83,19 +85,22 @@ class WPImageOptimizer:
 		if displayanalytics:
 			print( '# TOTAL IMAGES:', len(self.DATA) )
 			print( '# PNGS:\t\t', len(self.PNGS) )
-			print( '# JPEGS:\t', len(self.JPEGS) )
+			print( '# JPGS:\t\t', len(self.JPEGS) )
 			print( '# GIFS:\t\t', len(self.GIFS) )
 			print( '# SVGS:\t\t', len(self.SVGS), '\n' )
+		'''
 
 		# IMG ACTIONS BY FILE SIZE
 		# save all images exceeding size limit to the data OVER or UNDER lists
-		self.getImagesOfFileSize(images=self.DATA, over=True, limit=self.sizelimit, saveto=self.SIZEOVER)
-		self.getImagesOfFileSize(images=self.DATA, over=False, limit=self.sizelimit, saveto=self.SIZEUNDER)
+		#self.SIZEOVER = self.getImagesOfFileSize(images=self.DATA, over=True, limit=self.sizelimit)
+		#self.SIZEUNDER = self.getImagesOfFileSize(images=self.DATA, over=False, limit=self.sizelimit)
 		# log initial output
+		'''
 		if displayanalytics:
 			print( '# SIZE ERRORS:' )
 			print( '# OK ::\t\tkb<%d:' % self.sizelimit, len(self.SIZEUNDER) )
 			print( '# FIX::\t\tkb > %d:' % self.sizelimit, len(self.SIZEOVER), '\n' )
+		'''
 
 		# optimize images
 		# move problem images to 'warning'
@@ -104,7 +109,6 @@ class WPImageOptimizer:
 		# search and replace fixed images in src folder
 		# log all fixed & replaced images
 		# search and replace fixed images in all DATABASE tables
-
 
 	###########################################################################
 	# BUILD FUNCTIONS
@@ -115,8 +119,8 @@ class WPImageOptimizer:
 			# DIRECTORIES
 			# DATA directory
 			self.makeDir(self.DATAPATH)
-			# IMG sources
-			self.makeDir(self.SRC)
+			# ASSET sources
+			self.makeDir(self.SRC_ASSETS)
 			# WARNING flag directory
 			self.makeDir(self.SRC_WARN)
 			# ERROR flag directory
@@ -236,8 +240,28 @@ class WPImageOptimizer:
 		# return output
 		return True
 
+	# SORT ALL DATA ASSETS BY FILE EXTENSION
+	def sortAssetsByFiletype(self, assets=[]):
+		# SUB-COLLESTIONS = dict { T1 = [files], T2 = [files] }
+		SUBCOLLECTIONS = {}
+		# loop data
+		for data in assets:
+			# get filetype
+			ext = data['ext']
+			# check in subcollection
+			if not ext in SUBCOLLECTIONS:
+				SUBCOLLECTIONS[ext] = []
+			# save asset by its filetype
+			SUBCOLLECTIONS[ext].append(data)
+			# save filetypes to a global var
+			if not ext in self.FILETYPES:
+				self.FILETYPES.append(ext)
+		# return SUB-COLLECTIONS
+		return SUBCOLLECTIONS
+
+
 	# NARROW IMG LIST IN DATASET BY FILESIZE
-	def getImagesOfFileSize(self, images, over=True, limit=200, saveto=False):
+	def getImagesOfFileSize(self, images, over=True, limit=200):
 		# find images exceeding limit
 		SUBCOLLECTION = []
 		for data in images:
@@ -245,10 +269,10 @@ class WPImageOptimizer:
 			if isinstance(saveto, list):
 				if over:
 					if size > limit:
-						saveto.append( data )
+						SUBCOLLECTION.append( data )
 				else:
 					if size <= limit:
-						saveto.append( data )
+						SUBCOLLECTION.append( data )
 		return SUBCOLLECTION
 
 	# NARROW IMG LIST IN DATASET BY EXTENSION
@@ -256,8 +280,13 @@ class WPImageOptimizer:
 		SUBCOLLECTION = []
 		for data in images:
 			if isinstance(saveto, list):
-				if data['ext'] == ext:
-					saveto.append( data )
+				if isinstance(ext, list):
+					for ext_sub in ext:
+						if data['ext'] == ext_sub:
+							saveto.append( data )
+				else:
+					if data['ext'] == ext:
+						saveto.append( data )
 		return SUBCOLLECTION
 
 	###########################################################################
@@ -426,4 +455,8 @@ class WPImageOptimizer:
 				self.log('rename... adding...')
 	"""
 
+###############################################################################
+###############################################################################
+###############################################################################
+###############################################################################
 ###############################################################################
