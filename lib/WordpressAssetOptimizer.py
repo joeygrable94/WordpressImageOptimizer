@@ -84,18 +84,19 @@ class WordpressAssets:
 	# -----------------------------------------------------------------------
 	# CLASS FUNCTIONS
 
-	def __init__( self, src='src/uploads', sizelimit=180 ):
+	def __init__( self, src='src/uploads', img_size_limit=180 ):
 		''' constructor '''
 		self.dataready = False
 		self.assetsrc = '%s/%s' % (self.root, src)
 		self.datasrc = '%s/%s' % (self.root, 'data')
 		self.log = '%s/%s' % (self.datasrc, 'log.txt')
-		self.sizelimit = sizelimit
+		self.img_size_limit = img_size_limit
 		# create files and folders
 		if self.initializeFilesAndFolders():
 			self.initializeAssetData()
 		# once data is ready
 		if self.dataready:
+			print(self)
 			# run the application
 			self.analyzeAssetData()
 
@@ -154,14 +155,23 @@ class WordpressAssets:
 		datatypes = list(self.assets.keys())
 		# do actions base on each data types
 		for dtype in datatypes:
-
-			# images
+			# analyze images
 			if dtype == 'image':
-				# images by size
-				oversized_images = self.getAssetsBySize( self.assets['image'], over=True )
-				undersized_images = self.getAssetsBySize( self.assets['image'], over=False )
-				#print(len(oversized_images))
-				#print(len(undersized_images))
+				self.analyzeImages()
+
+	def analyzeImages( self ):
+		''' analyze the images compiled by the library '''
+		# images by size, over/under
+		over, under = self.getAssetsBySize( self.assets['image'] )
+		print( 'IMAGES: %d oversized, %d size ok' % (len(over), len(under)) )
+		
+		pngs = self.getAssetsByExt( self.assets['image'], 'png' )
+		pngs_over, pngs_under = self.getAssetsBySize( pngs )
+		print( 'PNGS: %d oversized, %d size ok' % (len(pngs_over), len(pngs_under)) )
+		
+		jpgs = self.getAssetsByExt( self.assets['image'], ['jpg','jpeg'] )
+		jpgs_over, jpgs_under = self.getAssetsBySize( jpgs )
+		print( 'JPEG: %d oversized, %d size ok' % (len(jpgs_over), len(jpgs_under)) )
 
 	# -----------------------------------------------------------------------
 	# DATA WRANGLERS
@@ -226,20 +236,18 @@ class WordpressAssets:
 
 	# -----------------------------------------------------------------------
 	# STATIC ACTIONS
-	def getAssetsBySize(self, assets, over=True, limit=200):
+	def getAssetsBySize( self, assets ):
 		''' narrow list in provided dataset by filesize '''
-		subcollect = []
+		over, under = [], []
 		for data in assets:
 			size = float(data.size)
-			if over:
-				if size > limit:
-					subcollect.append( data )
-			else:
-				if size <= limit:
-					subcollect.append( data )
-		return subcollect
+			if size > self.img_size_limit:
+				over.append( data )
+			elif size <= self.img_size_limit:
+				under.append( data )
+		return over, under
 
-	def getAssetsByExt(self, assets, ext, saveto=False):
+	def getAssetsByExt( self, assets, ext ):
 		''' narrow list in provided dataset by extension type '''
 		subcollect = []
 		for data in assets:
@@ -281,9 +289,15 @@ class WordpressAssets:
 		by default, loads all image assets
 		runs optimize-images on provided images
 
+		EXECUTION OPTIONS
 		optimize-images FILE_NAME
 		optimize-images -mw 1920 FILE_NAME
 		optimize-images -mh 1080 FILE_NAME
+		
+		optimize-images -q 65 FILE_NAME.jpg
+		optimize-images -mc 255 FILE_NAME.png
+
+		optimize-images --convert_big --force-delete
 
 		'''
 		# if no data set provided
@@ -305,13 +319,11 @@ class WordpressAssets:
 
 # ---------------------------------------------------------------------------
 #  INITIATE IMG OPTIMIZER
-IO = WordpressAssets( src='src/uploads', sizelimit=100 )
-
+IO = WordpressAssets( src='src/uploads', img_size_limit=100 )
 
 #	images	videos	audio	files	fonts	code
-IO.list('images')
+#IO.list('images')
 #IO.optimizeImages( run=False )
-
 
 # factory reset !
 #IO.resetAssetData()
