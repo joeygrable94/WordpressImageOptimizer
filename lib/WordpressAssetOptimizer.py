@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
 # imports
-import os, sys, re, csv, json, math, shutil
+import os, sys, re, csv, json, math, shutil, subprocess
 from datetime import datetime, date
 from pathlib2 import Path
 import optimize_images
@@ -17,13 +17,9 @@ pandas.set_option('display.width', 300)
 #from appscript import *
 
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# CONSTANTS
-datalabels = [ 'type', 'file', 'path', 'src', 'ext', 'size', 'timestamp', 'edited' ]
-mediatypes = {
+# constants
+ASSET_DATA_LABELS = [ 'type', 'name', 'path', 'src', 'ext', 'size', 'timestamp', 'edited' ]
+MEDIATYPES = {
 	'image': [ 'jpg', 'jpeg', 'jpx', 'png', 'gif', 'webp', 'cr2', 'tif', 'bmp', 'jxr', 'psd', 'ico', 'heic' ],
 	'video': [ 'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'mpg', 'flv' ],
 	'audio': [ 'mid', 'mp3', 'm4a', 'ogg', 'flac', 'wav', 'amr' ],
@@ -32,43 +28,69 @@ mediatypes = {
 	'code': [ 'xml', 'php', 'py', 'json', 'js', 'html', 'css', 'scss', 'sass', 'less' ]
 }
 
+def determineFileType( ext ):
+	''' returns file type label '''
+	filetype = 'unknown'
+	for media in MEDIATYPES:
+		if ext in MEDIATYPES[media]:
+			filetype = media
+	return filetype
+
+def makeDir( dirpath ):
+	''' makes dir if dir does not exist already exist '''
+	if os.path.exists(dirpath) == False:
+		os.makedirs(dirpath)
+
 
 # ---------------------------------------------------------------------------
-# IMAGE OPTIMIZER UTILITY CLASS
 class Asset:
+	''' handles media information '''
 
-	def __init__():
+	def __init__( self, name, path ):
+		''' sets up asset values '''
+		self.name = name
+		self.path = path
+		self.src = '%s/%s' % (self.path, self.name)
+		self.ext = name.split('.')[-1:][0]
+		self.size = self.calcFileSize( self.src )
+		self.timestamp = int(os.path.getmtime( self.src ))
+		self.modified = datetime.utcfromtimestamp( self.timestamp ).strftime('%m-%d')
+		self.type = determineFileType( self.ext )
+
+	def __repr__( self ):
+		''' represent asset object by type, size, name, last modified '''
+		return '<Asset type=%s size=%skbs modified_on=%s name=%s>' % (self.type, self.size, self.modified, self.name)
+
+	def get( self ):
+		''' get asset data tuple '''
+		aslist = [ self.type, self.name, self.path, self.src, self.ext, self.size, self.timestamp, self.modified ]
+		return tuple(aslist)
+
+	def calcFileSize( self, src ):
+		''' returns the size of the file in KBs '''
+		file_bytes = os.path.getsize( src )
+		file_kbs = file_bytes/1000
+		return format(file_kbs, '.3f')
 
 
 # ---------------------------------------------------------------------------
-# IMAGE OPTIMIZER UTILITY CLASS
 class WordpressAssets:
+	''' multi-tool for manipulating wordpress uploaded assets (LOCALLY) '''
 
-	# globals
 	root = '/'.join(os.path.dirname(os.path.realpath(__file__)).split('/')[:-1])
-	# data info
 	assets = {}
 	datafiles = []
 
 	# -----------------------------------------------------------------------
 	# CLASS FUNCTIONS
 
-	# represent the factory objects
-	def __repr__( self ):
-		reprstrs = []
-		for filetype in self.datafiles:
-			key = filetype.split('.')[0]
-			innerstr = ' %s=%d' % (key, len(self.assets[key]))
-			reprstrs.append(innerstr)
-		return '<%s%s>' % (self.__class__.__name__, ''.join(reprstrs))
-
-	# constructor
 	def __init__( self, src='src/uploads', sizelimit=180 ):
-		# flag
+		''' constructor '''
 		self.dataready = False
 		self.assetsrc = '%s/%s' % (self.root, src)
 		self.datasrc = '%s/%s' % (self.root, 'data')
 		self.log = '%s/%s' % (self.datasrc, 'log.txt')
+		self.sizelimit = sizelimit
 		# create files and folders
 		if self.initializeFilesAndFolders():
 			self.initializeAssetData()
@@ -77,11 +99,20 @@ class WordpressAssets:
 			# run the application
 			self.analyzeAssetData()
 
+	def __repr__( self ):
+		''' represents all Assets by type and number of type '''
+		reprstrs = []
+		for filetype in self.datafiles:
+			key = filetype.split('.')[0]
+			innerstr = ' %s=%d' % (key, len(self.assets[key]))
+			reprstrs.append(innerstr)
+		return '<%s%s>' % (self.__class__.__name__, ''.join(reprstrs))
+
 	# -----------------------------------------------------------------------
 	# CONTROLLERS
 
-	# confirms then deletes all stored data
 	def resetAssetData( self ):
+		''' confirms then deletes all stored data in files and lists '''
 		confirmdeletestr = 'You are about to delete the following data:\n%s\nAre you confident you want to RESET ALL DATA (yes or no): ' % self
 		confirmation = input(confirmdeletestr)
 		confirmation = confirmation.strip().lower() or 'no'
@@ -89,21 +120,21 @@ class WordpressAssets:
 		# delete files and reset data lists
 		if dodelete:
 			shutil.rmtree(self.datasrc)
-			self.assets = []
+			self.assets = {}
 			self.datafiles = []
 
-	# create initial files and folders
 	def initializeFilesAndFolders( self ):
+		''' create initial files and folders '''
 		try:
 			# make directories and data files
-			self.makeDir(self.datasrc)
+			makeDir(self.datasrc)
 			Path(self.log).touch(exist_ok=True)
 			return True
 		except:
 			return False
 
-	# compile asset data
 	def initializeAssetData( self ):
+		''' compile asset data '''
 		# check data files
 		self.assets = self.checkDataFileAssets()
 		# if no data loaded
@@ -117,27 +148,26 @@ class WordpressAssets:
 			self.dataready = True
 		return True
 
-	# analyze the compiled assets
 	def analyzeAssetData( self ):
+		''' analyze the compiled assets '''
 		# get available data types
 		datatypes = list(self.assets.keys())
 		# do actions base on each data types
 		for dtype in datatypes:
-			print(dtype)
-			# list all assets by type
-			# self.listAssetsFor(self.assets[dtype])
-		
-		# images by size
-		#oversized_images = self.getAssetsBySize( self.assets['image'], over=True )
-		#undersized_images = self.getAssetsBySize( self.assets['image'], over=False )
-		# print(len(oversized_images))
-		# print(len(undersized_images))
+
+			# images
+			if dtype == 'image':
+				# images by size
+				oversized_images = self.getAssetsBySize( self.assets['image'], over=True )
+				undersized_images = self.getAssetsBySize( self.assets['image'], over=False )
+				#print(len(oversized_images))
+				#print(len(undersized_images))
 
 	# -----------------------------------------------------------------------
 	# DATA WRANGLERS
 
-	# find and categorize all assets in src
 	def compileAssetsFromSrc( self, startpath ):
+		''' find and categorize all files in src and make Asset objs ''' 
 		# check input path
 		for f_lvl in os.listdir(startpath):
 			f_lvl_sub = '%s/%s' % (startpath, f_lvl)
@@ -146,39 +176,29 @@ class WordpressAssets:
 				self.compileAssetsFromSrc(f_lvl_sub)
 			# ignore .files and _files
 			elif f_lvl[:1] != '.' and f_lvl[:1] != '_':
-				# setup img vars
-				file_name = f_lvl
-				file_path = '%s/' % (startpath)
-				file_src =  file_path + file_name
-				file_bytes = os.path.getsize(file_src)
-				file_kbs = file_bytes/1000
-				file_kbs = format(file_kbs, '.3f')
-				file_unicode_ts = int( os.path.getmtime(file_src) )
-				file_edited_on = datetime.utcfromtimestamp(file_unicode_ts).strftime('%m-%d')
-				file_ext = file_name.split('.')[-1:][0]
-				file_type = self.determineAssetFileType(file_ext)
 				# make a tuple to access data from
-				datatuple = ( file_type, file_name, file_path, file_src, file_ext, file_bytes, file_unicode_ts, file_edited_on )
-				#dataobj = Asset( f_lvl, startpath )
+				aObj = Asset( f_lvl, startpath )
 				# check asset type already categorized
-				if not file_type in self.assets:
-					self.assets[file_type] = []
+				if not aObj.type in self.assets:
+					self.assets[aObj.type] = []
 				# save asset by its filetype
-				self.assets[file_type].append( datatuple )
+				self.assets[aObj.type].append( aObj )
 		return True
 
-	# save the assets compiled to data file
 	def saveCompiledData( self ):
+		''' save the Asset objs compiled to data file '''
 		for key in self.assets:
 			# make new sub data file
 			subdatafile = '%s/%s.csv' % ( self.datasrc, key )
 			# save subdata to new data file
 			with open( subdatafile, "w+" ) as datafile:
 				writer = csv.writer(datafile)
-				writer.writerows(self.assets[key])
 
-	# loop the data files and load their data
+				for aObj in self.assets[key]:
+					writer.writerow( aObj.get() )
+
 	def checkDataFileAssets( self ):
+		''' loop the data files and load Asset objs '''
 		alldata = {}
 		# loop files in data src
 		for datafile in os.listdir(self.datasrc):
@@ -197,27 +217,20 @@ class WordpressAssets:
 							# check type already categorized
 							if not filetype in alldata:
 								alldata[filetype] = []
+							# make asset object: path, name
+							aObj = Asset( row[1], row[2] )
 							# save row by key
-							alldata[filetype].append( tuple(row) )
+							alldata[filetype].append( aObj )
 		# return all data saved to the self.assets
 		return alldata
 
-	# returns file type label
-	def determineAssetFileType( self, ext ):
-		filetype = 'unknown'
-		for media in self.mediatypes:
-			if ext in self.mediatypes[media]:
-				filetype = media
-		return filetype
-
 	# -----------------------------------------------------------------------
 	# STATIC ACTIONS
-
-	# narrow list in provided dataset by filesize
 	def getAssetsBySize(self, assets, over=True, limit=200):
+		''' narrow list in provided dataset by filesize '''
 		subcollect = []
 		for data in assets:
-			size = int(data[5])/1000
+			size = float(data.size)
 			if over:
 				if size > limit:
 					subcollect.append( data )
@@ -226,99 +239,79 @@ class WordpressAssets:
 					subcollect.append( data )
 		return subcollect
 
-	# narrow list in provided dataset by extension type
-	def getAssetsByExt(self, images, ext, saveto=False):
+	def getAssetsByExt(self, assets, ext, saveto=False):
+		''' narrow list in provided dataset by extension type '''
 		subcollect = []
-		for data in images:
+		for data in assets:
 			if isinstance(ext, list):
 				for ext_sub in ext:
-					if data[4] == ext_sub:
+					if data.ext == ext_sub:
 						subcollect.append( data )
 			else:
-				if data[4] == ext:
+				if data.ext == ext:
 					subcollect.append( data )
 		return subcollect
 
 	# -----------------------------------------------------------------------
-	# CHAINABLE ACTIONS
+	# CHAINABLE ACTIONS return self
 
-	# list all images in supplied list (chainable)
-	def listAssetsFor(self, assets=[], byKey='file', shortlog=False, logdata=False):
-		outStr = ''
-		# log each asset on separate line
-		for data in assets:
-			kbs = int(data[5])/1000
-			kbs = format(kbs, '.3f')
-			if len(str(kbs)) > 7:
-				kbs = str(kbs[:7])
-			elif len(str(kbs)) < 7:
-				kbs = str(kbs)+'0'
-			# short log of just the name
-			if shortlog:
-				outStr = outStr + '%s' % ( data[1] )
-			# log: size, file name 
-			else:
-				outStr = outStr + '%s\t\t%s' % (kbs, data[1] )
-			outStr += '\n'
-		# write list
-		if logdata:
-			self.fileLog(outStr)
-		else:
-			print(outStr)
-		# make method chainable
+	def listAll( self ):
+		''' prints each asset for all keys on line ''' 
+		for key in self.assets:
+			for data in self.assets[key]:
+				print(data)
 		return self
 
-	# optimize all images in list (chainable)
-	def optimizeImages(self, images=[], execute=False):
+	def list( self, items ):
+		''' lists items of the requested key type on line '''
+		ogi = items
+		if items[-1].lower() == 's':
+			items = items[:-1]
+		if items in self.assets.keys():
+			for item in self.assets[items]:
+				print(item)
+		else:
+			print('No %s found.' % ogi )
+		return self
+
+	def optimizeImages(self, run=False, images=[]):
+		'''
+		executes optimize or prints assets to optimize
+		accepts a list of images to optimize
+		by default, loads all image assets
+		runs optimize-images on provided images
+
+		optimize-images FILE_NAME
+		optimize-images -mw 1920 FILE_NAME
+		optimize-images -mh 1080 FILE_NAME
+
+		'''
 		# if no data set provided
 		if not images:
 			# auto log all data
-			images = self.DATA
+			images = self.assets['image']
 		# loop all images
 		for data in images:
 			# optimize images if needed
-			if execute:
-				opt_img_cmd = 'optimize-images %s' % data['src']
-				os.system( opt_img_cmd )
+			if run:
+				optimizethis = 'optimize-images %s' % data.src
+				subprocess.run(optimizethis, shell=True)
 			else:
-				self.log(data['src'])
+				print( data )
 		# make method chainable
 		return self
 
-	# -----------------------------------------------------------------------
-	# GENERAL UTILITIES
 
-	# directory maker
-	def makeDir(self, dirpath):
-		# if folder does not exist already
-		if os.path.exists(dirpath) == False:
-			os.makedirs(dirpath)
-			self.filelog("new directory created: %s" % dirpath)
 
-	# log something to a text log file
-	def filelog( self, msg, filelog=False ):
-		# check which file to log data too
-		if filelog:
-			datafile = filelog
-		else:
-			datafile = self.log
-		# get log date info
-		dtnow = datetime.now()
-		lognow = dtnow.strftime("%Y/%m/%d %H:%M;%S") # dd/mm/YY HH:MM:SS
-		# log msg to log file
-		with open( datafile, 'w+' ) as logfile:
-			msgtxt = str(msg)
-			logfile.write("\n%s\r\n" % lognow)
-			logfile.write("%s\r\n" % msgtxt)
-
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 #  INITIATE IMG OPTIMIZER
-IO = WordpressAssets(
-	src='src/uploads',
-	sizelimit=100
-)
+IO = WordpressAssets( src='src/uploads', sizelimit=100 )
+
+
+#	images	videos	audio	files	fonts	code
+IO.list('images')
+#IO.optimizeImages( run=False )
+
+
+# factory reset !
 #IO.resetAssetData()
