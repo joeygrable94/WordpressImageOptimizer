@@ -1,3 +1,4 @@
+# cd _PyScripts/PhotoManipulation/WordpressImageOptimizer
 # ---------------------------------------------------------------------------
 # imports
 import os, sys, re, csv, json, math, shutil, subprocess
@@ -16,6 +17,7 @@ pandas.set_option('display.width', 300)
 #import photoshop.api as PS
 #from appscript import *
 
+
 # ---------------------------------------------------------------------------
 # constants
 ASSET_DATA_LABELS = [ 'type', 'name', 'path', 'src', 'ext', 'size', 'timestamp', 'edited' ]
@@ -23,7 +25,8 @@ MEDIATYPES = {
 	'image': [ 'jpg', 'jpeg', 'jpx', 'png', 'gif', 'webp', 'cr2', 'tif', 'bmp', 'jxr', 'psd', 'ico', 'heic' ],
 	'video': [ 'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'mpg', 'flv' ],
 	'audio': [ 'mid', 'mp3', 'm4a', 'ogg', 'flac', 'wav', 'amr' ],
-	'file': [ 'txt', 'pdf', 'rtf', 'epub', 'zip', 'tar', 'rar', 'gz', 'bz2', '7z', 'xz', 'exe', 'swf', 'eot', 'ps', 'sqlite', 'nes', 'crx', 'cab', 'deb', 'ar', 'Z', 'lz' ],
+	'file': [ 'txt', 'pdf', 'rtf', 'epub', 'zip', 'tar', 'rar', 'gz', 'bz2', '7z', 'xz', 'exe', 'swf', 'eot',
+				'ps', 'sqlite', 'nes', 'crx', 'cab', 'deb', 'ar', 'Z', 'lz' ],
 	'font': [ 'woff', 'woff2', 'ttf', 'otf' ],
 	'code': [ 'xml', 'php', 'py', 'json', 'js', 'html', 'css', 'scss', 'sass', 'less' ]
 }
@@ -78,25 +81,31 @@ class WordpressAssets:
 	''' multi-tool for manipulating wordpress uploaded assets (LOCALLY) '''
 
 	root = '/'.join(os.path.dirname(os.path.realpath(__file__)).split('/')[:-1])
-	assets = {}
 	datafiles = []
+	assets = {}
+	oversized = {}
+
 
 	# -----------------------------------------------------------------------
 	# CLASS FUNCTIONS
 
-	def __init__( self, src='src/uploads', img_size_limit=180 ):
+	def __init__( self, src='src/uploads', showout=True ):
 		''' constructor '''
 		self.dataready = False
 		self.assetsrc = '%s/%s' % (self.root, src)
 		self.datasrc = '%s/%s' % (self.root, 'data')
 		self.log = '%s/%s' % (self.datasrc, 'log.txt')
-		self.img_size_limit = img_size_limit
+		self.limit_img = 180
+		self.limits = dict(image=180)
+		self.showout = showout
 		# create files and folders
 		if self.initializeFilesAndFolders():
 			self.initializeAssetData()
 		# once data is ready
 		if self.dataready:
-			print(self)
+			# print repr if wanted
+			if self.showout:
+				print(self)
 			# run the application
 			self.analyzeAssetData()
 
@@ -108,6 +117,7 @@ class WordpressAssets:
 			innerstr = ' %s=%d' % (key, len(self.assets[key]))
 			reprstrs.append(innerstr)
 		return '<%s%s>' % (self.__class__.__name__, ''.join(reprstrs))
+
 
 	# -----------------------------------------------------------------------
 	# CONTROLLERS
@@ -149,64 +159,6 @@ class WordpressAssets:
 			self.dataready = True
 		return True
 
-	def analyzeAssetData( self ):
-		''' analyze the compiled assets '''
-		# get available data types
-		datatypes = list(self.assets.keys())
-		# do actions base on each data types
-		for dtype in datatypes:
-			# analyze images
-			if dtype == 'image':
-				self.analyzeImages()
-
-	def analyzeImages( self ):
-		''' analyze the images compiled by the library '''
-		# images by size, over/under
-		over, under = self.getAssetsBySize( self.assets['image'] )
-		print( 'IMAGES: %d oversized, %d size ok' % (len(over), len(under)) )
-		
-		pngs = self.getAssetsByExt( self.assets['image'], 'png' )
-		pngs_over, pngs_under = self.getAssetsBySize( pngs )
-		print( 'PNGS: %d oversized, %d size ok' % (len(pngs_over), len(pngs_under)) )
-		
-		jpgs = self.getAssetsByExt( self.assets['image'], ['jpg','jpeg'] )
-		jpgs_over, jpgs_under = self.getAssetsBySize( jpgs )
-		print( 'JPEG: %d oversized, %d size ok' % (len(jpgs_over), len(jpgs_under)) )
-
-	# -----------------------------------------------------------------------
-	# DATA WRANGLERS
-
-	def compileAssetsFromSrc( self, startpath ):
-		''' find and categorize all files in src and make Asset objs ''' 
-		# check input path
-		for f_lvl in os.listdir(startpath):
-			f_lvl_sub = '%s/%s' % (startpath, f_lvl)
-			# check sub-folder
-			if os.path.isdir(f_lvl_sub):
-				self.compileAssetsFromSrc(f_lvl_sub)
-			# ignore .files and _files
-			elif f_lvl[:1] != '.' and f_lvl[:1] != '_':
-				# make a tuple to access data from
-				aObj = Asset( f_lvl, startpath )
-				# check asset type already categorized
-				if not aObj.type in self.assets:
-					self.assets[aObj.type] = []
-				# save asset by its filetype
-				self.assets[aObj.type].append( aObj )
-		return True
-
-	def saveCompiledData( self ):
-		''' save the Asset objs compiled to data file '''
-		for key in self.assets:
-			# make new sub data file
-			subdatafile = '%s/%s.csv' % ( self.datasrc, key )
-			# save subdata to new data file
-			with open( subdatafile, "w+" ) as datafile:
-				writer = csv.writer(datafile)
-
-				for aObj in self.assets[key]:
-					writer.writerow( aObj.get() )
-
 	def checkDataFileAssets( self ):
 		''' loop the data files and load Asset objs '''
 		alldata = {}
@@ -234,20 +186,110 @@ class WordpressAssets:
 		# return all data saved to the self.assets
 		return alldata
 
+	def saveCompiledData( self ):
+		''' save the Asset objs compiled to data file '''
+		for key in self.assets:
+			# make new sub data file
+			subdatafile = '%s/%s.csv' % ( self.datasrc, key )
+			# save subdata to new data file
+			with open( subdatafile, "w+" ) as datafile:
+				writer = csv.writer(datafile)
+				for aObj in self.assets[key]:
+					writer.writerow( aObj.get() )
+
+	def compileAssetsFromSrc( self, startpath ):
+		''' find and categorize all files in src and make Asset objs ''' 
+		# check input path
+		for f_lvl in os.listdir(startpath):
+			f_lvl_sub = '%s/%s' % (startpath, f_lvl)
+			# check sub-folder
+			if os.path.isdir(f_lvl_sub):
+				self.compileAssetsFromSrc(f_lvl_sub)
+			# ignore .files and _files
+			elif f_lvl[:1] != '.' and f_lvl[:1] != '_':
+				# make a tuple to access data from
+				aObj = Asset( f_lvl, startpath )
+				# check asset type already categorized
+				if not aObj.type in self.assets:
+					self.assets[aObj.type] = []
+				# save asset by its filetype
+				self.assets[aObj.type].append( aObj )
+		return True
+
+	def analyzeAssetData( self ):
+		''' analyze the compiled assets '''
+		# get available data types
+		datatypes = list(self.assets.keys())
+		# do actions base on each data types
+		for dtype in datatypes:
+			# analyze images
+			if dtype == 'image':
+				self.analyzeImages()
+
+	def analyzeImages( self ):
+		''' analyze the images compiled by the library '''
+		self.images = self.getDataByAttr( self.assets['image'], 'ext' )
+		# calc over under/under
+		over_under = self.getOverUnder( self.images, 'image' )
+		if self.showout:
+			print(over_under)
+
 	# -----------------------------------------------------------------------
-	# STATIC ACTIONS
-	def getAssetsBySize( self, assets ):
+	# DATA WRANGLERS
+
+	def getDataByAttr( self, datalist=[], datatype='' ):
+		alldata = {}
+		for item in datalist:
+			obj_attr = getattr(item, datatype)
+			# check type already categorized
+			if not obj_attr in alldata:
+				alldata[obj_attr] = []
+			# save row by key
+			alldata[obj_attr].append( item )
+		return alldata
+
+	def getOverUnder( self, assets=[], datatype='' ):
+		# output var
+		output = []
+		# group images by their size
+		over, under = {}, {}
+		for atype in assets:
+			# check type already categorized
+			if not atype in over:
+				over[atype] = []
+			if not atype in under:
+				under[atype] = []
+			# get over under
+			assets_over, assets_under = self.getDataBySize( assets[atype], self.limits[datatype] )
+			# set over under
+			over[atype] = assets_over
+			under[atype] = assets_under
+			# add string to the output
+			output.append('%s: %d over, %d under\n' % (atype.upper(), len(assets_over), len(assets_under)) )
+		# get oversized images
+		if not datatype in self.oversized.keys():
+			self.oversized[datatype] = []
+		for over_ext in over.keys():
+			self.oversized[datatype].extend(over[over_ext])
+		# add totals to output
+		total_over = len(self.oversized[datatype])
+		total_under = len(self.assets[datatype]) - len(self.oversized[datatype])
+		output.insert(0, '%s: %d over, %d under\n' % (datatype.upper(), total_over, total_under) )
+		# return the output
+		return ''.join(output)
+
+	def getDataBySize( self, assets, limit ):
 		''' narrow list in provided dataset by filesize '''
 		over, under = [], []
 		for data in assets:
 			size = float(data.size)
-			if size > self.img_size_limit:
+			if size > limit:
 				over.append( data )
-			elif size <= self.img_size_limit:
+			elif size <= limit:
 				under.append( data )
 		return over, under
 
-	def getAssetsByExt( self, assets, ext ):
+	def getDataByExt( self, assets, ext ):
 		''' narrow list in provided dataset by extension type '''
 		subcollect = []
 		for data in assets:
@@ -258,7 +300,8 @@ class WordpressAssets:
 			else:
 				if data.ext == ext:
 					subcollect.append( data )
-		return subcollect
+		return subcollect	
+
 
 	# -----------------------------------------------------------------------
 	# CHAINABLE ACTIONS return self
@@ -282,7 +325,7 @@ class WordpressAssets:
 			print('No %s found.' % ogi )
 		return self
 
-	def optimizeImages(self, run=False, images=[]):
+	def optimizeImages( self, images=[], run=False ):
 		'''
 		executes optimize or prints assets to optimize
 		accepts a list of images to optimize
@@ -293,6 +336,7 @@ class WordpressAssets:
 		optimize-images FILE_NAME
 		optimize-images -mw 1920 FILE_NAME
 		optimize-images -mh 1080 FILE_NAME
+		optimize-images -mw 1920 -mh 1080 FILE_NAME
 		
 		optimize-images -q 65 FILE_NAME.jpg
 		optimize-images -mc 255 FILE_NAME.png
@@ -302,13 +346,43 @@ class WordpressAssets:
 		'''
 		# if no data set provided
 		if not images:
-			# auto log all data
-			images = self.assets['image']
+			# only optimize oversized images
+			images = self.oversized['image']
 		# loop all images
 		for data in images:
-			# optimize images if needed
+
+			#return
+			'''
+			IMAGE CASES
+			- img-bkg transparent?
+			- img-W > web-W = by how much?
+			- img-H > web-H = by how much?
+			- img-WHR = ratio of width to height?
+
+			'''
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+			### FIX ME LATER ###
+
+			# # create shell command
+			# if data.ext.lower() == 'png':
+			# 	optimizethis = 'optimize-images %s' % data.src
+			# else:
+			# 	optimizethis = 'optimize-images %s' % data.src
+
+			#optimizethis = 'optimize-images %s' % data.src
+			optimizethis = 'optimize-images -mw 1920 -mh 1080 "%s"' % data.src
+
+			# optimize images when running
 			if run:
-				optimizethis = 'optimize-images %s' % data.src
 				subprocess.run(optimizethis, shell=True)
 			else:
 				print( data )
@@ -316,14 +390,13 @@ class WordpressAssets:
 		return self
 
 
-
 # ---------------------------------------------------------------------------
 #  INITIATE IMG OPTIMIZER
-IO = WordpressAssets( src='src/uploads', img_size_limit=100 )
+IO = WordpressAssets( src='src/ihoto' )
 
 #	images	videos	audio	files	fonts	code
 #IO.list('images')
-#IO.optimizeImages( run=False )
+IO.optimizeImages( run=False )
 
 # factory reset !
 #IO.resetAssetData()
