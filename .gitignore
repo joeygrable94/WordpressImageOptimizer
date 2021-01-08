@@ -1,11 +1,14 @@
 # ignore python dirs
 lib/__pycache__*
-lib/__pycache__*
 
 # ignore htaccess and mac thumbs
 .DS_Store
 *.DS_Store
 
 # ignore upload assets
+src/gsmc/*
+src/gsmc-data/*
 src/ihoto/*
+
+# ignore data files
 data/*
