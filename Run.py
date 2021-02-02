@@ -3,28 +3,52 @@
 from lib.WebAssetOptimizer import WebAssets
 
 # OPTIMIZATION INFO
-# TIME TAKE	12.91s / 661.39s
-# ORIGINAL	350.064541 MB
-# OPTIMIZED	144.008079 MB
-# MB SAVED	206.056462 MB
-# % SAVED	58.86242 %
-# IMAGE		95 over, 1805 under
-# JPG		32 over, 1295 under
-# JPEG		13 over, 113 under
-# PNG		50 over, 397 under
+
+# RUN 1
+# SIZE:		424.516059 MB
+# IMAGE:	409 over, 3651 under
+# JPG:		174 over, 2907 under
+# PNG:		235 over, 743 under
+# GIF:		0 over, 1 under
+
+# RUN 2
+# SIZE: 	262.607061 MB
+# IMAGE: 	239 over, 3821 under
+# JPG: 		173 over, 2908 under
+# PNG: 		66 over, 912 under
+# GIF: 		0 over, 1 under
+
+# IMAGE:	4060
+# FILE:		2
+# CODE:		3
+# TIME:		690.36 sec (11.506 min)
+
+# MB SAVED:	161.908998 MB
+# % SAVED:	38.139664 %
+# % ORG:	61.860336 %
 
 #  INITIATE IMG OPTIMIZER
 IO = WebAssets(
-	src='src/gsmc',
-	showout=False
+	src='src/geotag',
+	showout=True,
+	imgsize=1,
+	imgdim=(1920,1080),
+	qlty=70,
+	colors=255
 )
 
-#print(IO.srcsize)
+# view asset data
 #print( len(IO.oversized['image']) )
 #print( len(IO.images['png']) )
 #IO.list('images')	#	images	videos	audio	files	fonts	code
 #IO.listSet( IO.oversized['image'] )
+
+# resize and compress images
 #IO.optimizeImages( run=False )
+
+# GEO tag images
+#IO.GEOtagImages( IO.assets['image'] )
+#IO.checkGEOtags()
 
 # factory reset !
 #IO.resetAssetData()

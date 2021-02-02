@@ -8,8 +8,8 @@ from pathlib2 import Path
 # image optimizer
 import optimize_images
 import drawBot
-import PIL.Image
-from PIL import ImageFile
+from PIL import ImageFile, Image, ExifTags
+from GPSPhoto import gpsphoto
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 #import photoshop.api as PS
 #from appscript import *
@@ -21,21 +21,24 @@ MEDIATYPES = {
 	'image': [ 'jpg', 'jpeg', 'jpx', 'png', 'gif', 'webp', 'cr2', 'tif', 'bmp', 'jxr', 'psd', 'ico', 'heic' ],
 	'video': [ 'mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'wmv', 'mpg', 'flv' ],
 	'audio': [ 'mid', 'mp3', 'm4a', 'ogg', 'flac', 'wav', 'amr' ],
-	'file': [ 'txt', 'pdf', 'rtf', 'epub', 'zip', 'tar', 'rar', 'gz', 'bz2', '7z', 'xz', 'exe', 'swf', 'eot', 'ps', 'sqlite', 'nes', 'crx', 'cab', 'deb', 'ar', 'Z', 'lz' ],
+	'file': [ 'txt', 'pdf', 'rtf', 'epub', 'zip', 'tar', 'rar', 'gz', 'bz2', '7z', 'xz', 'exe', 'swf', 'eot',
+				'ps', 'nes', 'crx', 'cab', 'deb', 'ar', 'Z', 'lz', 'hph' ],
 	'font': [ 'woff', 'woff2', 'ttf', 'otf' ],
-	'code': [ 'xml', 'php', 'py', 'json', 'js', 'html', 'css', 'scss', 'sass', 'less' ] }
-LIMITS = dict( image=180, dimension=(1920,1080) )
+	'code': [ 'xml', 'php', 'py', 'json', 'js', 'html', 'css', 'scss', 'sass', 'less' ],
+	'log': [ 'log' ],
+	'db': [ 'sqlite', 'sql', 'mmdb' ],
+}
 
 # ---------------------------------------------------------------------------
 def getFolderSize(folder):
-    total_size = os.path.getsize(folder)
-    for item in os.listdir(folder):
-        itempath = os.path.join(folder, item)
-        if os.path.isfile(itempath):
-            total_size += os.path.getsize(itempath)
-        elif os.path.isdir(itempath):
-            total_size += getFolderSize(itempath)
-    return total_size
+	total_size = os.path.getsize(folder)
+	for item in os.listdir(folder):
+		itempath = os.path.join(folder, item)
+		if os.path.isfile(itempath):
+			total_size += os.path.getsize(itempath)
+		elif os.path.isdir(itempath):
+			total_size += getFolderSize(itempath)
+	return total_size
 def determineFileType( ext ):
 	''' returns file type label '''
 	filetype = 'unknown'
@@ -69,11 +72,12 @@ class Asset:
 		self.name = name
 		self.path = path
 		self.src = '%s/%s' % (self.path, self.name)
-		self.ext = name.split('.')[-1:][0]
+		self.ext = name.split('.')[-1:][0].lower()
 		self.size = self.calcFileSize( self.src )
 		self.timestamp = int(os.path.getmtime( self.src ))
 		self.modified = datetime.utcfromtimestamp( self.timestamp ).strftime('%m-%d')
 		self.type = determineFileType( self.ext )
+		self.LIMITS = None
 	def __repr__( self ):
 		''' represent asset object by type, size, name, last modified '''
 		return '<Asset type=%s size=%skbs modified_on=%s name=%s>' % (self.type, self.size, self.modified, self.name)
@@ -81,6 +85,9 @@ class Asset:
 		''' get asset data tuple '''
 		aslist = [ self.type, self.name, self.path, self.src, self.ext, self.size, self.timestamp, self.modified ]
 		return tuple(aslist)
+	def setLimits( self, limitDict={} ):
+		self.LIMITS = limitDict
+		return True
 	def calcFileSize( self, src ):
 		''' returns the size of the file in KBs '''
 		file_bytes = os.path.getsize( src )
@@ -96,11 +103,11 @@ class Asset:
 		# calc whats needed
 		w_h = drawBot.imageSize(self.src)
 		ratio = float(w_h[0] / w_h[1])
-		pimg = PIL.Image.open(self.src)
+		pimg = Image.open(self.src)
 		flag_trans = has_transparency(pimg)
 		# check size flags
-		flag_w = True if w_h[0] > LIMITS['dimension'][0] else False
-		flag_h = True if w_h[1] > LIMITS['dimension'][1] else False
+		flag_w = True if w_h[0] > self.LIMITS['dimension'][0] else False
+		flag_h = True if w_h[1] > self.LIMITS['dimension'][1] else False
 		flag_size = True if flag_w and flag_h else False
 		# check ratio flags
 		flag_ratio = ''
@@ -123,7 +130,7 @@ class WebAssets:
 
 	# -----------------------------------------------------------------------
 	# CLASS FUNCTIONS
-	def __init__( self, src='src/uploads', showout=True ):
+	def __init__( self, src='src/uploads', showout=True, imgsize=72, imgdim=(1920,1080), qlty=70, colors=255 ):
 		''' constructor '''
 		self.dataready = False
 		self.assetsrc = '%s/%s' % (self.root, src)
@@ -131,6 +138,12 @@ class WebAssets:
 		self.log = '%s/%s' % (self.datasrc, 'log.txt')
 		self.showout = showout
 		self.srcsize = float(getFolderSize(self.assetsrc)/1000000)
+		self.LIMITS = dict(
+			image=imgsize,
+			dimension=imgdim,
+			qlty=qlty,
+			colors=colors
+		)
 		# create files and folders
 		if self.initializeFilesAndFolders():
 			self.initializeAssetData()
@@ -139,6 +152,7 @@ class WebAssets:
 			# print repr if wanted
 			if self.showout:
 				print(self)
+				print('OG SIZE: %s MB' % str(self.srcsize))
 			# run the application
 			self.analyzeAssetData()
 	def __repr__( self ):
@@ -208,6 +222,7 @@ class WebAssets:
 								alldata[filetype] = []
 							# make asset object: path, name
 							aObj = Asset( row[1], row[2] )
+							aObj.setLimits( self.LIMITS )
 							# save row by key
 							alldata[filetype].append( aObj )
 		# return all data saved to the self.assets
@@ -280,7 +295,7 @@ class WebAssets:
 			if not atype in under:
 				under[atype] = []
 			# get over under
-			assets_over, assets_under = self.getDataBySize( assets[atype], LIMITS[datatype] )
+			assets_over, assets_under = self.getDataBySize( assets[atype], self.LIMITS[datatype] )
 			# set over under
 			over[atype] = assets_over
 			under[atype] = assets_under
@@ -319,6 +334,11 @@ class WebAssets:
 				if data.ext == ext:
 					subcollect.append( data )
 		return subcollect	
+	def getImageByName( self, imgname ):
+		for image in self.assets['image']:
+			if image.name == imgname:
+				return image
+		return False
 	# -----------------------------------------------------------------------
 	# CHAINABLE ACTIONS return self
 	def listAll( self ):
@@ -356,30 +376,27 @@ class WebAssets:
 		for data in images:
 			# calc image case data
 			img_case = data.assessImage()
-			qlty = 70
-			colors = 255
-			max_w = LIMITS['dimension'][0] 
-			max_h = LIMITS['dimension'][1]
-			max_size = LIMITS['image']
+			max_w = self.LIMITS['dimension'][0] 
+			max_h = self.LIMITS['dimension'][1]
+			max_size = self.LIMITS['image']
 			# create optimize-images command 
 			optimize_cmd = ['optimize-images']
 			# limit image quality
-			optimize_cmd.append('-q %s' % qlty)
+			optimize_cmd.append('-q %s' % self.LIMITS['qlty'])
+			# SKIP GIFS
+			if data.ext.lower() == 'gif':
+				continue
 			# JPGs and JPEGs 
 			if data.ext.lower() == 'jpg' or data.ext.lower() == 'jpeg':
-				# exceeds width
-				if img_case[1]:
+				if img_case[1]: # exceeds width
 					optimize_cmd.append('-mw %s' % max_w)
-				# exceeds height
-				if img_case[2]:
+				if img_case[2]: # exceeds height
 					optimize_cmd.append('-mh %s' % max_h)
 			# for PNGS
 			if data.ext.lower() == 'png':
-				# no transparency to preserve
-				if not img_case[3]:
-					optimize_cmd.append('-rc -mc %s' % colors)
-				# exceeds width and height
-				if img_case[0]:
+				if not img_case[3]: # no transparency to preserve
+					optimize_cmd.append('-rc -mc %s' % self.LIMITS['colors'])
+				if img_case[0]: # exceeds width and height
 					optimize_cmd.append('-cb -fd')
 			# include a link to the src img
 			optimize_cmd.append(data.src)
@@ -394,25 +411,63 @@ class WebAssets:
 		return self
 
 	# -----------------------------------------------------------------------
-	# PHOTOSHOP ACTIONS
-	"""
-		def openImageInPS( self, image ):
-		''' open images in photoshop '''
-		img_to_PS = image['src']
-		# Create a new document to play with
-		''' Method 1 '''
-		PS = app('/Applications/Adobe Photoshop 2020/Adobe Photoshop 2020.app')
-		PS.open(mactypes.Alias(img_to_PS))
-		''' Method 2
-		PSapp = PS.Application()
-		PSdoc = PSapp.documents.add()
-		print(PS)
-		print(PSapp)
-		print(PSdoc)
-		'''
-		''' Method 3
-		with Session() as PS:
-			PS.app.runMenuItem(ps.app.charIDToTypeID("FtOn"))
-			print(PS)
-		'''
-		return """
+	# GEOTAGGING ACTIONS
+	def GEOtagImages( self, imgset=[] ):
+		# make new sub data file
+		geotaglist = '%s/lib/%s' % ( self.root, 'geotag_these.csv' )
+		# save subdata to new data file
+		with open( geotaglist, "r" ) as geotagfile:
+			geotagreader = csv.reader(geotagfile)
+			for row in geotagreader:
+				imgObj = self.getImageByName( row[0] )
+				if imgObj:
+					imgCoords = ( float(row[1]), float(row[2]) )
+					# set the location for the desired image
+					self.setGPSData(imgObj, imgCoords)
+				else:
+					print('did not find image to geotag: %s' % row[0])
+
+	def setGPSData( self, img, coords=(33.7870229923962,-117.85383331199532), altft=None ):
+		# https://pypi.org/project/gpsphoto/
+		# https://sylvaindurand.org/gps-data-from-photos-with-python/
+		# determine latitude, longitude and timestamp
+		img_coords = coords
+		img_gcftalt = altft # GCFT altitude
+		img_timestamp = datetime.now().strftime("%Y:%m:%d %H:%M:%S")
+		# create GPSPhoto Object
+		photo = gpsphoto.GPSPhoto(img.src)
+		try:
+			self.removeGPSData(img)
+		except Exception as inst:
+			error, msg = inst.args()
+			print('CAUGHT in removeGPSData():', error, msg)
+		finally:
+			# create GPSInfo Data Object
+			if not altft == None:
+				info = gpsphoto.GPSInfo( img_coords, alt=img_gcftalt, timeStamp=img_timestamp )
+			else:
+				info = gpsphoto.GPSInfo( img_coords, timeStamp=img_timestamp)
+			# modify GPSData
+			return photo.modGPSData(info, img.src)
+
+	def removeGPSData( self, img ):
+		'''create GPSPhoto Object and strip GPSData'''
+		photo = gpsphoto.GPSPhoto(img.src)
+		return photo.stripData(img.src)
+
+	def checkGEOtags( self ):
+		for image in self.assets['image']:
+			self.printExifData( image )
+
+	def printExifData( self, img ):
+		pil_img = Image.open(img.src)
+		img_exif = pil_img.getexif()
+		if img_exif is None:
+			print("Sorry, image has no exif data.")
+		else:
+			img_exif_dict = dict(img_exif)
+			for key, val in img_exif_dict.items():
+				if key in ExifTags.TAGS:
+					print(f"{ExifTags.TAGS[key]}:{repr(val)}")
+			print('\n')
+
