@@ -447,8 +447,14 @@ class WebAssets:
 				info = gpsphoto.GPSInfo( img_coords, alt=img_gcftalt, timeStamp=img_timestamp )
 			else:
 				info = gpsphoto.GPSInfo( img_coords, timeStamp=img_timestamp)
+
+			img_name = img.src.split('/')[-1].split('.')
+			gps_img_name = '%s_GPS.%s' % (img_name[0], img_name[-1])
+			new_gps_path = '%s/_tagged' % self.assetsrc
+			new_gps_img = '%s/%s' % (new_gps_path, gps_img_name)
+			makeDir(new_gps_path)
 			# modify GPSData
-			return photo.modGPSData(info, img.src)
+			photo.modGPSData(info, new_gps_img)
 
 	def removeGPSData( self, img ):
 		'''create GPSPhoto Object and strip GPSData'''
@@ -469,5 +475,5 @@ class WebAssets:
 			for key, val in img_exif_dict.items():
 				if key in ExifTags.TAGS:
 					print(f"{ExifTags.TAGS[key]}:{repr(val)}")
-			print('\n')
+			print('')
 

@@ -9,6 +9,7 @@ lib/__pycache__*
 src/gsmc/*
 src/gsmc-data/*
 src/ihoto/*
+src/geotag/*
 
 # ignore data files
 data/*

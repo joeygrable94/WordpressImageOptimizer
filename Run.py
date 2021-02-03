@@ -47,7 +47,7 @@ IO = WebAssets(
 #IO.optimizeImages( run=False )
 
 # GEO tag images
-#IO.GEOtagImages( IO.assets['image'] )
+IO.GEOtagImages( IO.assets['image'] )
 #IO.checkGEOtags()
 
 # factory reset !
